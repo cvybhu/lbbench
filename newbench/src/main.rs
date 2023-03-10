@@ -97,6 +97,10 @@ async fn main() -> Result<()> {
         let _ = fetch_non_system_keyspaces(&session).await?;
     }
 
+    println!("Stats before any operations:");
+    print_stats(&GLOBAL.stats());
+    println!();
+
     measure_topology_refresh(&session).await?;
 
     if args.no_queries {
