@@ -31,6 +31,9 @@ struct Args {
 
     #[clap(short, long, value_parser, default_value_t = 100_000usize)]
     requests: usize,
+
+    #[clap(long, value_parser)]
+    no_queries: bool,
 }
 
 fn print_stats(stats: &stats_alloc::Stats) {
@@ -95,6 +98,11 @@ async fn main() -> Result<()> {
     }
 
     measure_topology_refresh(&session).await?;
+
+    if args.no_queries {
+        println!("The --no-queries flag is set, so skipping making requests");
+        return Ok(());
+    }
 
     measure_queries_benchmark(&session, KeyspaceType::Simple, &args).await?;
     measure_queries_benchmark(&session, KeyspaceType::Nts, &args).await?;
