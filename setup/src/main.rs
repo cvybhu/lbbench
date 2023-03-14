@@ -40,7 +40,11 @@ struct ClusterInfo {
 async fn main() -> Result<()> {
     let args = Args::parse();
 
-    let session: Session = SessionBuilder::new().known_node(args.node).build().await?;
+    let session: Session = SessionBuilder::new()
+        .known_node(args.node)
+        .auto_schema_agreement_timeout(std::time::Duration::from_secs(3600))
+        .build()
+        .await?;
 
     clear_existing_keyspaces(&session, args.verbose).await?;
     let cluster_info: ClusterInfo = get_cluster_info(&session, args.verbose).await?;
