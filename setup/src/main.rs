@@ -15,6 +15,9 @@ struct Args {
 
     #[clap(short, long, value_parser)]
     verbose: bool,
+
+    #[clap(short, long, value_parser, default_value_t = 1000_000usize)]
+    max_replication_factor: usize,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, ArgEnum)]
@@ -41,7 +44,14 @@ async fn main() -> Result<()> {
     clear_existing_keyspaces(&session, args.verbose).await?;
     let cluster_info: ClusterInfo = get_cluster_info(&session, args.verbose).await?;
 
-    generate_keyspaces(&session, &cluster_info, args.mode, args.verbose).await?;
+    generate_keyspaces(
+        &session,
+        &cluster_info,
+        args.mode,
+        args.verbose,
+        args.max_replication_factor,
+    )
+    .await?;
 
     create_tables(&session, args.verbose).await?;
 
@@ -159,6 +169,7 @@ async fn generate_keyspaces(
     cluster_info: &ClusterInfo,
     mode: Mode,
     verbose: bool,
+    max_replication_factor: usize,
 ) -> Result<()> {
     if mode == Mode::Simple || mode == Mode::Bigsimple || mode == Mode::Combined {
         let simple_num = 20;
@@ -168,6 +179,9 @@ async fn generate_keyspaces(
             let mut repfactor = 1 + random_int([ks_id, 3434], 8);
             if repfactor > cluster_info.total_nodes {
                 repfactor = cluster_info.total_nodes;
+            }
+            if repfactor > max_replication_factor {
+                repfactor = max_replication_factor;
             }
             let query = format!("CREATE KEYSPACE simple{ks_id} with replication = {{'class': 'SimpleStrategy', 'replication_factor': {repfactor}}}");
             if verbose {
@@ -201,6 +215,9 @@ async fn generate_keyspaces(
             if repfactor == 0 {
                 repfactor = 1;
             }
+            if repfactor > max_replication_factor {
+                repfactor = max_replication_factor;
+            }
 
             let query = format!("CREATE KEYSPACE bigsimple{ks_id} with replication = {{'class': 'SimpleStrategy', 'replication_factor': {repfactor}}}");
 
@@ -233,6 +250,9 @@ async fn generate_keyspaces(
 
                 if cur_repfactor > *dc_size {
                     cur_repfactor = *dc_size;
+                }
+                if cur_repfactor > max_replication_factor {
+                    cur_repfactor = max_replication_factor;
                 }
 
                 dc_repfactors.push((dc_name, cur_repfactor));
@@ -281,6 +301,9 @@ async fn generate_keyspaces(
 
                 if cur_repfactor > *dc_size {
                     cur_repfactor = *dc_size;
+                }
+                if cur_repfactor > max_replication_factor {
+                    cur_repfactor = max_replication_factor;
                 }
 
                 dc_repfactors.push((dc_name, cur_repfactor));
