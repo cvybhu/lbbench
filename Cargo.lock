@@ -982,6 +982,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
+ "rand",
  "scylla 0.7.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "tokio",
 ]

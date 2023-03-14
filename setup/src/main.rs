@@ -1,5 +1,6 @@
 use anyhow::Result;
 use clap::{ArgEnum, Parser};
+use rand::{Rng, SeedableRng};
 use scylla::{Session, SessionBuilder};
 use std::collections::HashMap;
 use std::io::Write;
@@ -142,28 +143,6 @@ async fn get_cluster_info(session: &Session, verbose: bool) -> Result<ClusterInf
     Ok(cluster_info)
 }
 
-fn random_int(inputs: impl AsRef<[usize]>, upper: usize) -> usize {
-    let bigprime: u128 = 1000000007;
-    let mut result: u128 = inputs.as_ref().len() as u128;
-    for i in inputs.as_ref() {
-        let mut x: u128 = (i + 10) as u128;
-        for _ in 0..16 {
-            x = (x * x) % bigprime;
-            result += x;
-            result %= bigprime;
-            result *= result;
-            result %= bigprime;
-        }
-
-        for _ in 0..16 {
-            result *= result;
-            result %= bigprime;
-        }
-    }
-
-    (result % (upper as u128)) as usize
-}
-
 async fn generate_keyspaces(
     session: &Session,
     cluster_info: &ClusterInfo,
@@ -172,17 +151,16 @@ async fn generate_keyspaces(
     max_replication_factor: usize,
 ) -> Result<()> {
     if mode == Mode::Simple || mode == Mode::Bigsimple || mode == Mode::Combined {
+        let mut rng = rand::rngs::StdRng::from_seed([1_u8; 32]);
         let simple_num = 20;
         println!("Creating {simple_num} SimpleStrategy keyspaces with RF = 1..=8");
 
         for ks_id in 0..simple_num {
-            let mut repfactor = 1 + random_int([ks_id, 3434], 8);
-            if repfactor > cluster_info.total_nodes {
-                repfactor = cluster_info.total_nodes;
-            }
-            if repfactor > max_replication_factor {
-                repfactor = max_replication_factor;
-            }
+            let repfactor_upper = [8, cluster_info.total_nodes, max_replication_factor]
+                .into_iter()
+                .min()
+                .unwrap();
+            let repfactor = rng.gen_range(1..=repfactor_upper);
             let query = format!("CREATE KEYSPACE simple{ks_id} with replication = {{'class': 'SimpleStrategy', 'replication_factor': {repfactor}}}");
             if verbose {
                 println!("{ks_id}/{simple_num}: {query}");
@@ -200,6 +178,7 @@ async fn generate_keyspaces(
     }
 
     if mode == Mode::Bigsimple || mode == Mode::Combined {
+        let mut rng = rand::rngs::StdRng::from_seed([2_u8; 32]);
         let bigsimple_num = 8;
         println!(
             "Creating {} SimpleStrategy keyspaces with RF~{}",
@@ -207,17 +186,9 @@ async fn generate_keyspaces(
         );
 
         for ks_id in 0..bigsimple_num {
-            let to_substract = random_int([ks_id, 1834], 8);
-            let mut repfactor = cluster_info
-                .total_nodes
-                .checked_sub(to_substract)
-                .unwrap_or(1);
-            if repfactor == 0 {
-                repfactor = 1;
-            }
-            if repfactor > max_replication_factor {
-                repfactor = max_replication_factor;
-            }
+            let upper = std::cmp::min(cluster_info.total_nodes, max_replication_factor);
+            let lower = if upper < 9 { 1 } else { upper - 8 };
+            let repfactor = rng.gen_range(lower..=upper);
 
             let query = format!("CREATE KEYSPACE bigsimple{ks_id} with replication = {{'class': 'SimpleStrategy', 'replication_factor': {repfactor}}}");
 
@@ -238,6 +209,7 @@ async fn generate_keyspaces(
     }
 
     if mode == Mode::Nts || mode == Mode::Combined {
+        let mut rng = rand::rngs::StdRng::from_seed([3_u8; 32]);
         let nts_num = 32;
 
         println!("Creating {nts_num} NetworkTopologyStrategy keyspaces with RF=1..=8");
@@ -245,15 +217,12 @@ async fn generate_keyspaces(
         for ks_id in 0..nts_num {
             let mut dc_repfactors: Vec<(&str, usize)> = Vec::new();
 
-            for (i, (dc_name, dc_size)) in cluster_info.datacenter_sizes.iter().enumerate() {
-                let mut cur_repfactor: usize = 1 + random_int([ks_id, i], 8);
-
-                if cur_repfactor > *dc_size {
-                    cur_repfactor = *dc_size;
-                }
-                if cur_repfactor > max_replication_factor {
-                    cur_repfactor = max_replication_factor;
-                }
+            for (dc_name, dc_size) in cluster_info.datacenter_sizes.iter() {
+                let repfactor_upper = [8, *dc_size, max_replication_factor]
+                    .into_iter()
+                    .min()
+                    .unwrap();
+                let cur_repfactor = rng.gen_range(1..=repfactor_upper);
 
                 dc_repfactors.push((dc_name, cur_repfactor));
             }
@@ -286,25 +255,18 @@ async fn generate_keyspaces(
     }
 
     if mode == Mode::Bignts || mode == Mode::Combined {
+        let mut rng = rand::rngs::StdRng::from_seed([4_u8; 32]);
+
         let bignts_num = 8;
         println!("Creating {bignts_num} NetworkTopologyStrategy keyspaces with RF~dcsize");
 
         for ks_id in 0..bignts_num {
             let mut dc_repfactors: Vec<(&str, usize)> = Vec::new();
 
-            for (i, (dc_name, dc_size)) in cluster_info.datacenter_sizes.iter().enumerate() {
-                let to_substract = random_int([ks_id, i, 3434], 4);
-                let mut cur_repfactor: usize = dc_size.checked_sub(to_substract).unwrap_or(1);
-                if cur_repfactor == 0 {
-                    cur_repfactor = 1;
-                }
-
-                if cur_repfactor > *dc_size {
-                    cur_repfactor = *dc_size;
-                }
-                if cur_repfactor > max_replication_factor {
-                    cur_repfactor = max_replication_factor;
-                }
+            for (dc_name, dc_size) in cluster_info.datacenter_sizes.iter() {
+                let upper = std::cmp::min(*dc_size, max_replication_factor);
+                let lower = if upper < 9 { 1 } else { upper - 8 };
+                let cur_repfactor = rng.gen_range(lower..=upper);
 
                 dc_repfactors.push((dc_name, cur_repfactor));
             }
@@ -364,47 +326,4 @@ async fn create_tables(session: &Session, verbose: bool) -> Result<()> {
     println!("\nCreated the tables!");
 
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::random_int;
-
-    fn test_random_int_is_uniform(upper: usize) {
-        let mut occurences: Vec<usize> = vec![0; upper];
-
-        for i in 0..32 {
-            for j in 0..32 {
-                for k in 0..32 {
-                    let random: usize = random_int([i, j, k], upper);
-                    occurences[random] += 1;
-                }
-            }
-        }
-
-        let sum: usize = occurences.iter().sum();
-
-        let mean = sum as f64 / occurences.len() as f64;
-
-        for i in 0..occurences.len() {
-            let deviation = (mean as i64 - occurences[i] as i64).abs() as f64;
-            if deviation > 0.2 * mean {
-                println!("{:?}", occurences);
-                panic!(
-                    "Mean is {:.2}, but {} had {} occurences. Allowed deviation: {:.2}",
-                    mean,
-                    i,
-                    occurences[i],
-                    0.2 * mean
-                )
-            }
-        }
-    }
-
-    #[test]
-    fn random_int_is_uniform() {
-        for upper in [1, 2, 3, 4, 5, 6, 7].into_iter().chain((8..64).step_by(8)) {
-            test_random_int_is_uniform(upper);
-        }
-    }
 }
