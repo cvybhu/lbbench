@@ -1,5 +1,5 @@
 use scylla::{
-    statement::prepared_statement::PreparedStatement,
+    statement::{prepared_statement::PreparedStatement, Consistency},
     transport::{topology::Strategy, ClusterData},
     Session, SessionBuilder,
 };
@@ -181,10 +181,17 @@ async fn measure_queries_benchmark(
         }
     };
 
-    let prepared_insert = session.prepare(format!("INSERT INTO {ks_name}.table2 (p1, p2, p3, c1, c2, c3, s, r1, r2, r3) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")).await?;
+    let consistency: Consistency = match ks_type {
+        KeyspaceType::Simple => Consistency::Quorum,
+        KeyspaceType::Nts => Consistency::LocalQuorum
+    };
+
+    let mut prepared_insert = session.prepare(format!("INSERT INTO {ks_name}.table2 (p1, p2, p3, c1, c2, c3, s, r1, r2, r3) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")).await?;
+    prepared_insert.set_consistency(consistency);
     let prepared_insert = Arc::new(prepared_insert);
 
-    let prepared_select = session.prepare(format!("SELECT p1, p2, p3, c1, c2, c3, s, r1, r2, r3 FROM {ks_name}.table2 WHERE p1 = ? AND p2 = ? AND p3 = ? AND c1 = ? AND c2 = ? AND c3 = ?")).await?;
+    let mut prepared_select = session.prepare(format!("SELECT p1, p2, p3, c1, c2, c3, s, r1, r2, r3 FROM {ks_name}.table2 WHERE p1 = ? AND p2 = ? AND p3 = ? AND c1 = ? AND c2 = ? AND c3 = ?")).await?;
+    prepared_select.set_consistency(consistency);
     let prepared_select = Arc::new(prepared_select);
 
     print!("Sending {} inserts, hold tight ", args.requests);
