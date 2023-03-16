@@ -155,7 +155,7 @@ async fn generate_keyspaces(
     max_replication_factor: usize,
 ) -> Result<()> {
     if mode == Mode::Simple || mode == Mode::Bigsimple || mode == Mode::Combined {
-        let mut rng = rand::rngs::StdRng::from_seed([1_u8; 32]);
+        let mut rng = rand::rngs::StdRng::seed_from_u64(1);
         let simple_num = 20;
         println!("Creating {simple_num} SimpleStrategy keyspaces with RF = 1..=8");
 
@@ -182,7 +182,7 @@ async fn generate_keyspaces(
     }
 
     if mode == Mode::Bigsimple || mode == Mode::Combined {
-        let mut rng = rand::rngs::StdRng::from_seed([2_u8; 32]);
+        let mut rng = rand::rngs::StdRng::seed_from_u64(2);
         let bigsimple_num = 8;
         println!(
             "Creating {} SimpleStrategy keyspaces with RF~{}",
@@ -213,16 +213,18 @@ async fn generate_keyspaces(
     }
 
     if mode == Mode::Nts || mode == Mode::Combined {
-        let mut rng = rand::rngs::StdRng::from_seed([3_u8; 32]);
+        let mut rng = rand::rngs::StdRng::seed_from_u64(3);
         let nts_num = 32;
 
         println!("Creating {nts_num} NetworkTopologyStrategy keyspaces with RF=1..=8");
 
         for ks_id in 0..nts_num {
-            let mut dc_repfactors: Vec<(&str, usize)> = Vec::new();
+            let mut dc_repfactors: Vec<(String, usize)> = Vec::new();
 
-            for (dc_name, dc_size) in cluster_info.datacenter_sizes.iter() {
-                let repfactor_upper = [8, *dc_size, max_replication_factor]
+            let mut info_dc_sizes: Vec<(String, usize)> = cluster_info.datacenter_sizes.clone().into_iter().collect();
+            info_dc_sizes.sort();
+            for (dc_name, dc_size) in info_dc_sizes {
+                let repfactor_upper = [8, dc_size, max_replication_factor]
                     .into_iter()
                     .min()
                     .unwrap();
@@ -232,8 +234,8 @@ async fn generate_keyspaces(
             }
 
             // Sometimes drop 1 dc from the NTS, it doesn't have to contain all DCs.
-            if dc_repfactors.len() > 1 && ks_id % 5 == 0 {
-                let to_drop: usize = (ks_id * ks_id + 2323) % dc_repfactors.len();
+            if dc_repfactors.len() > 1 && rng.gen_range(0..5) == 0 {
+                let to_drop: usize = rng.gen_range(0..dc_repfactors.len());
                 dc_repfactors.remove(to_drop);
             }
 
@@ -259,16 +261,18 @@ async fn generate_keyspaces(
     }
 
     if mode == Mode::Bignts || mode == Mode::Combined {
-        let mut rng = rand::rngs::StdRng::from_seed([4_u8; 32]);
+        let mut rng = rand::rngs::StdRng::seed_from_u64(4);
 
         let bignts_num = 8;
         println!("Creating {bignts_num} NetworkTopologyStrategy keyspaces with RF~dcsize");
 
         for ks_id in 0..bignts_num {
-            let mut dc_repfactors: Vec<(&str, usize)> = Vec::new();
+            let mut dc_repfactors: Vec<(String, usize)> = Vec::new();
 
-            for (dc_name, dc_size) in cluster_info.datacenter_sizes.iter() {
-                let upper = std::cmp::min(*dc_size, max_replication_factor);
+            let mut info_dc_sizes: Vec<(String, usize)> = cluster_info.datacenter_sizes.clone().into_iter().collect();
+            info_dc_sizes.sort();
+            for (dc_name, dc_size) in info_dc_sizes {
+                let upper = std::cmp::min(dc_size, max_replication_factor);
                 let lower = if upper < 9 { 1 } else { upper - 8 };
                 let cur_repfactor = rng.gen_range(lower..=upper);
 
@@ -276,8 +280,8 @@ async fn generate_keyspaces(
             }
 
             // Sometimes drop 1 dc from the NTS, it doesn't have to contain all DCs.
-            if dc_repfactors.len() > 1 && ks_id % 5 == 0 {
-                let to_drop: usize = (ks_id * ks_id + 2323) % dc_repfactors.len();
+            if dc_repfactors.len() > 1 && rng.gen_range(0..5) == 0 {
+                let to_drop: usize = rng.gen_range(0..dc_repfactors.len());
                 dc_repfactors.remove(to_drop);
             }
 
