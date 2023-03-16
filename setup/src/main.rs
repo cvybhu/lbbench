@@ -33,7 +33,7 @@ enum Mode {
 #[derive(Debug)]
 struct ClusterInfo {
     total_nodes: usize,
-    datacenter_sizes: HashMap<String, usize>,
+    datacenter_sizes: Vec<(String, usize)>,
 }
 
 #[tokio::main]
@@ -135,9 +135,12 @@ async fn get_cluster_info(session: &Session, verbose: bool) -> Result<ClusterInf
         }
     }
 
+    let mut datacenter_sizes_vec: Vec<(String, usize)> = datacenter_sizes.into_iter().collect();
+    datacenter_sizes_vec.sort();
+
     let cluster_info = ClusterInfo {
         total_nodes,
-        datacenter_sizes,
+        datacenter_sizes: datacenter_sizes_vec,
     };
 
     if verbose {
@@ -219,18 +222,16 @@ async fn generate_keyspaces(
         println!("Creating {nts_num} NetworkTopologyStrategy keyspaces with RF=1..=8");
 
         for ks_id in 0..nts_num {
-            let mut dc_repfactors: Vec<(String, usize)> = Vec::new();
+            let mut dc_repfactors: Vec<(&str, usize)> = Vec::new();
 
-            let mut info_dc_sizes: Vec<(String, usize)> = cluster_info.datacenter_sizes.clone().into_iter().collect();
-            info_dc_sizes.sort();
-            for (dc_name, dc_size) in info_dc_sizes {
-                let repfactor_upper = [8, dc_size, max_replication_factor]
+            for (dc_name, dc_size) in &cluster_info.datacenter_sizes {
+                let repfactor_upper = [8, *dc_size, max_replication_factor]
                     .into_iter()
                     .min()
                     .unwrap();
                 let cur_repfactor = rng.gen_range(1..=repfactor_upper);
 
-                dc_repfactors.push((dc_name, cur_repfactor));
+                dc_repfactors.push((dc_name.as_str(), cur_repfactor));
             }
 
             // Sometimes drop 1 dc from the NTS, it doesn't have to contain all DCs.
@@ -267,16 +268,14 @@ async fn generate_keyspaces(
         println!("Creating {bignts_num} NetworkTopologyStrategy keyspaces with RF~dcsize");
 
         for ks_id in 0..bignts_num {
-            let mut dc_repfactors: Vec<(String, usize)> = Vec::new();
+            let mut dc_repfactors: Vec<(&str, usize)> = Vec::new();
 
-            let mut info_dc_sizes: Vec<(String, usize)> = cluster_info.datacenter_sizes.clone().into_iter().collect();
-            info_dc_sizes.sort();
-            for (dc_name, dc_size) in info_dc_sizes {
-                let upper = std::cmp::min(dc_size, max_replication_factor);
+            for (dc_name, dc_size) in cluster_info.datacenter_sizes.iter() {
+                let upper = std::cmp::min(*dc_size, max_replication_factor);
                 let lower = if upper < 9 { 1 } else { upper - 8 };
                 let cur_repfactor = rng.gen_range(lower..=upper);
 
-                dc_repfactors.push((dc_name, cur_repfactor));
+                dc_repfactors.push((dc_name.as_str(), cur_repfactor));
             }
 
             // Sometimes drop 1 dc from the NTS, it doesn't have to contain all DCs.
